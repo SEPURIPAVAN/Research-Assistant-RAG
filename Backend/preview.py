@@ -1,14 +1,12 @@
 import getpass
 import os
-import getpass
-import os
 import dotenv
 dotenv.load_dotenv()
 
 
-if not os.environ.get("LANGSMITH_API_KEY"):
-  os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter API key for LangSmith: ")
-os.environ["LANGSMITH_TRACING"] = "true"
+#if not os.environ.get("LANGSMITH_API_KEY"):
+#  os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter API key for LangSmith: ")
+#os.environ["LANGSMITH_TRACING"] = "true"
 if not os.environ.get("GOOGLE_API_KEY"):
   os.environ["GOOGLE_API_KEY"] = getpass.getpass("Enter API key for Google Gemini: ")
 
@@ -32,12 +30,11 @@ vector_store = Chroma(
 
 import bs4
 from langchain import hub
-from langchain_community.document_loaders import WebBaseLoader
+from langchain_community.document_loaders import WebBaseLoader, PyPDFLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langgraph.graph import START, StateGraph
 from typing_extensions import List, TypedDict
-from langchain_community.document_loaders import PyPDFLoader
 
 ################ This is for loading from a webpage will add optionality later
 
@@ -59,6 +56,7 @@ all_splits = text_splitter.split_documents(docs)
 _ = vector_store.add_documents(documents=all_splits)
 
 prompt = hub.pull("rlm/rag-prompt")
+print(prompt)
 
 class State(TypedDict):
     question: str
