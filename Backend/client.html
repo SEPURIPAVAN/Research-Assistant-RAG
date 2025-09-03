@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Chatbot Frontend</title>
+  <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-auth-compat.js"></script>
+</head>
+<body>
+  <h2>Chatbot App</h2>
+
+  <!-- LOGIN -->
+  <div id="loginDiv">
+    <button onclick="login()">Login with Google</button>
+  </div>
+
+  <!-- APP -->
+  <div id="appDiv" style="display:none; display:flex; gap:20px;">
+    <!-- Sidebar with chat ids -->
+    <div style="width:200px; border:1px solid black; padding:10px;">
+      <h3>Chats</h3>
+      <ul id="chatList"></ul>
+      <hr>
+      <h4>New Chat</h4>
+      <input type="file" id="docFile" />
+      <button onclick="uploadDoc()">Upload</button>
+    </div>
+
+    <!-- Chat Window -->
+    <div style="flex:1; border:1px solid black; padding:10px;">
+      <h3 id="currentChat">Select a chat</h3>
+      <div id="messages" style="height:300px; overflow-y:auto; border:1px solid gray; padding:5px;"></div>
+      <input type="text" id="question" placeholder="Type your message" style="width:80%;">
+      <button onclick="sendMessage()">Send</button>
+    </div>
+  </div>
+
+<script>
+  // === FIREBASE CONFIG ===
+ // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyCWsuymXvSuXlrn1HLXVkjr-Ps_45S6C6k",
+  authDomain: "ragflow-909e7.firebaseapp.com",
+  projectId: "ragflow-909e7",
+  storageBucket: "ragflow-909e7.firebasestorage.app",
+  messagingSenderId: "651569300020",
+  appId: "1:651569300020:web:a9f80bc75833c6c5cb0061",
+  measurementId: "G-C08BWQJWDY"
+};
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+
+  let idToken = null;
+  let currentChatId = null;
+
+  // === LOGIN ===
+  async function login() {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    const result = await auth.signInWithPopup(provider);
+    idToken = await result.user.getIdToken();
+    document.getElementById("loginDiv").style.display = "none";
+    document.getElementById("appDiv").style.display = "flex";
+    loadChatIds();
+  }
+
+  // === LOAD CHAT IDS ===
+  async function loadChatIds() {
+    const res = await fetch("http://127.0.0.1:8000/get_chat_ids", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + idToken }
+    });
+    const data = await res.json();
+    const list = document.getElementById("chatList");
+    list.innerHTML = "";
+    data.chat_ids.forEach(id => {
+      const li = document.createElement("li");
+      li.innerText = id;
+      li.style.cursor = "pointer";
+      li.onclick = () => loadChat(id);
+      list.appendChild(li);
+    });
+  }
+
+  // === LOAD CHAT MESSAGES ===
+  async function loadChat(chatId) {
+    currentChatId = chatId;
+    document.getElementById("currentChat").innerText = "Chat: " + chatId;
+    const res = await fetch(`http://127.0.0.1:8000/get_chat_by_id?chat_id=${chatId}`, {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + idToken }
+    });
+    const data = await res.json();
+    renderMessages(data.messages);
+  }
+
+  // === RENDER CHAT MESSAGES ===
+  function renderMessages(messages) {
+    const messagesDiv = document.getElementById("messages");
+    messagesDiv.innerHTML = "";
+    if (!messages) return;
+    messages.forEach(msg => {
+      const p = document.createElement("p");
+      p.innerText = (msg.type === "human" ? "You: " : "AI: ") + msg.text;
+      messagesDiv.appendChild(p);
+    });
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }
+
+  // === SEND MESSAGE ===
+  async function sendMessage() {
+    const question = document.getElementById("question").value;
+    if (!currentChatId) { alert("Select a chat first"); return; }
+    if (!question.trim()) return;
+
+    const res = await fetch(`http://127.0.0.1:8000/chat?chat_id=${currentChatId}&question=${encodeURIComponent(question)}`, {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + idToken }
+    });
+    const data = await res.json();
+
+    // Refresh messages
+    loadChat(currentChatId);
+    document.getElementById("question").value = "";
+  }
+
+  // === UPLOAD NEW DOC ===
+  async function uploadDoc() {
+    const file = document.getElementById("docFile").files[0];
+    if (!file) { alert("Select a file first"); return; }
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch("http://127.0.0.1:8000/UploadFile", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + idToken },
+      body: formData
+    });
+    const data = await res.json();
+    alert("New chat created: " + data.chat_id);
+    loadChatIds();
+  }
+</script>
+</body>
+</html>
