@@ -37,37 +37,55 @@
 
 <script>
   // === FIREBASE CONFIG ===
- // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyCWsuymXvSuXlrn1HLXVkjr-Ps_45S6C6k",
-  authDomain: "ragflow-909e7.firebaseapp.com",
-  projectId: "ragflow-909e7",
-  storageBucket: "ragflow-909e7.firebasestorage.app",
-  messagingSenderId: "651569300020",
-  appId: "1:651569300020:web:a9f80bc75833c6c5cb0061",
-  measurementId: "G-C08BWQJWDY"
-};
+  const firebaseConfig = {
+    apiKey: "AIzaSyCWsuymXvSuXlrn1HLXVkjr-Ps_45S6C6k",
+    authDomain: "ragflow-909e7.firebaseapp.com",
+    projectId: "ragflow-909e7",
+    storageBucket: "ragflow-909e7.firebasestorage.app",
+    messagingSenderId: "651569300020",
+    appId: "1:651569300020:web:a9f80bc75833c6c5cb0061",
+    measurementId: "G-C08BWQJWDY"
+  };
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
 
+  let user = null;
   let idToken = null;
   let currentChatId = null;
+
+  // Listen for auth state
+  auth.onAuthStateChanged(async (u) => {
+    if (u) {
+      user = u;
+      idToken = await user.getIdToken();
+      document.getElementById("loginDiv").style.display = "none";
+      document.getElementById("appDiv").style.display = "flex";
+      loadChatIds();
+    } else {
+      document.getElementById("loginDiv").style.display = "block";
+      document.getElementById("appDiv").style.display = "none";
+    }
+  });
 
   // === LOGIN ===
   async function login() {
     const provider = new firebase.auth.GoogleAuthProvider();
-    const result = await auth.signInWithPopup(provider);
-    idToken = await result.user.getIdToken();
-    document.getElementById("loginDiv").style.display = "none";
-    document.getElementById("appDiv").style.display = "flex";
-    loadChatIds();
+    await auth.signInWithPopup(provider);
+  }
+
+  // === REFRESH TOKEN ===
+  async function getToken() {
+    if (!user) return null;
+    idToken = await user.getIdToken(true);  // force refresh
+    return idToken;
   }
 
   // === LOAD CHAT IDS ===
   async function loadChatIds() {
+    const token = await getToken();
     const res = await fetch("http://127.0.0.1:8000/get_chat_ids", {
       method: "POST",
-      headers: { "Authorization": "Bearer " + idToken }
+      headers: { "Authorization": "Bearer " + token }
     });
     const data = await res.json();
     const list = document.getElementById("chatList");
@@ -85,9 +103,10 @@ const firebaseConfig = {
   async function loadChat(chatId) {
     currentChatId = chatId;
     document.getElementById("currentChat").innerText = "Chat: " + chatId;
+    const token = await getToken();
     const res = await fetch(`http://127.0.0.1:8000/get_chat_by_id?chat_id=${chatId}`, {
       method: "POST",
-      headers: { "Authorization": "Bearer " + idToken }
+      headers: { "Authorization": "Bearer " + token }
     });
     const data = await res.json();
     renderMessages(data.messages);
@@ -112,11 +131,12 @@ const firebaseConfig = {
     if (!currentChatId) { alert("Select a chat first"); return; }
     if (!question.trim()) return;
 
+    const token = await getToken();
     const res = await fetch(`http://127.0.0.1:8000/chat?chat_id=${currentChatId}&question=${encodeURIComponent(question)}`, {
       method: "POST",
-      headers: { "Authorization": "Bearer " + idToken }
+      headers: { "Authorization": "Bearer " + token }
     });
-    const data = await res.json();
+    await res.json();
 
     // Refresh messages
     loadChat(currentChatId);
@@ -129,9 +149,10 @@ const firebaseConfig = {
     if (!file) { alert("Select a file first"); return; }
     const formData = new FormData();
     formData.append("file", file);
+    const token = await getToken();
     const res = await fetch("http://127.0.0.1:8000/UploadFile", {
       method: "POST",
-      headers: { "Authorization": "Bearer " + idToken },
+      headers: { "Authorization": "Bearer " + token },
       body: formData
     });
     const data = await res.json();

@@ -134,7 +134,7 @@ async def chat(request: Request, user=Depends(verify_token), chat_id: str = "", 
 
 @app.post("/get_chat_ids")
 @limiter.limit("20/minute")   # rate limiting (20 requests per minute)
-async def chat(request: Request, user=Depends(verify_token)):
+async def chat_get(request: Request, user=Depends(verify_token)):
     try:
         chats_ref = db.collection("users").document(request.state.user['uid']).collection("chats")
         docs = chats_ref.stream()
