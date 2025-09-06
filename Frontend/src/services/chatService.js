@@ -1,3 +1,4 @@
+import { backendApi } from './backendApi';
 import { firestore, auth } from './firebase';
 import { 
     collection, 
@@ -9,28 +10,63 @@ import {
     serverTimestamp
 } from 'firebase/firestore';
 
-let currentConversationId = null;
+let currentChatId = null;
 
-
-export const createNewConversation = () => {
-    currentConversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    return currentConversationId;
-};
-
-export const getCurrentConversationId = () => {
-    if (!currentConversationId) {
-        currentConversationId = createNewConversation();
+// Create new chat session (this will be called when user uploads a file)
+export const createNewChat = async (file) => {
+    try {
+        const response = await backendApi.uploadFile(file);
+        currentChatId = response.chat_id;
+        
+        // Also save to Firestore for UI purposes
+        const user = auth.currentUser;
+        if (user) {
+            await addDoc(collection(firestore, 'chatSessions'), {
+                userId: user.uid,
+                chatId: currentChatId,
+                fileName: file.name,
+                createdAt: serverTimestamp(),
+                lastMessage: 'File uploaded successfully'
+            });
+        }
+        
+        return { success: true, chatId: currentChatId, message: response.msg };
+    } catch (error) {
+        console.error('Error creating new chat:', error);
+        return { success: false, error: error.message };
     }
-    return currentConversationId;
 };
 
+// Get current chat ID
+export const getCurrentChatId = () => {
+    return currentChatId;
+};
 
+// Set current chat ID (when user selects a conversation)
+export const setCurrentChatId = (chatId) => {
+    currentChatId = chatId;
+};
+
+// Send message to backend
+export const sendMessageToBackend = async (message) => {
+    try {
+        if (!currentChatId) {
+            throw new Error('No active chat session. Please upload a file first.');
+        }
+
+        const response = await backendApi.sendMessage(currentChatId, message);
+        return { success: true, answer: response.answer };
+    } catch (error) {
+        console.error('Error sending message:', error);
+        return { success: false, error: error.message };
+    }
+};
+
+// Save chat message to Firestore for UI
 export const saveChatMessage = async (message, response) => {
     try {
         const user = auth.currentUser;
         if (!user) throw new Error('User not authenticated');
-
-        const conversationId = getCurrentConversationId();
 
         const chatData = {
             userId: user.uid,
@@ -38,7 +74,8 @@ export const saveChatMessage = async (message, response) => {
             message: message,
             response: response,
             timestamp: serverTimestamp(),
-            conversationId: conversationId 
+            chatId: currentChatId,
+            type: 'backend_chat'
         };
 
         const docRef = await addDoc(collection(firestore, 'chatMessages'), chatData);
@@ -50,18 +87,21 @@ export const saveChatMessage = async (message, response) => {
     }
 };
 
-
+// Get current chat history from Firestore
 export const getCurrentChatHistory = (callback) => {
     try {
         const user = auth.currentUser;
         if (!user) throw new Error('User not authenticated');
 
-        const conversationId = getCurrentConversationId();
+        if (!currentChatId) {
+            callback([]);
+            return () => {};
+        }
 
         const q = query(
             collection(firestore, 'chatMessages'),
             where('userId', '==', user.uid),
-            where('conversationId', '==', conversationId),
+            where('chatId', '==', currentChatId),
             orderBy('timestamp', 'asc')
         );
 
@@ -78,43 +118,27 @@ export const getCurrentChatHistory = (callback) => {
     }
 };
 
-
+// Get all chat sessions from Firestore
 export const getAllConversations = (callback) => {
     try {
         const user = auth.currentUser;
         if (!user) throw new Error('User not authenticated');
 
         const q = query(
-            collection(firestore, 'chatMessages'),
+            collection(firestore, 'chatSessions'),
             where('userId', '==', user.uid),
-            orderBy('timestamp', 'desc')
+            orderBy('createdAt', 'desc')
         );
 
         return onSnapshot(q, (snapshot) => {
-            const conversationMap = {};
-            
-            snapshot.docs.forEach(doc => {
-                const data = doc.data();
-                const convId = data.conversationId;
-                
-                if (!conversationMap[convId]) {
-                    conversationMap[convId] = {
-                        id: convId,
-                        lastMessage: data.message,
-                        timestamp: data.timestamp,
-                        messageCount: 1
-                    };
-                } else {
-                    conversationMap[convId].messageCount += 1;
-                    if (data.timestamp && (!conversationMap[convId].timestamp || 
-                        data.timestamp.seconds > conversationMap[convId].timestamp.seconds)) {
-                        conversationMap[convId].lastMessage = data.message;
-                        conversationMap[convId].timestamp = data.timestamp;
-                    }
-                }
-            });
-
-            callback(Object.values(conversationMap));
+            const conversations = snapshot.docs.map(doc => ({
+                id: doc.data().chatId,
+                fileName: doc.data().fileName,
+                lastMessage: doc.data().lastMessage,
+                timestamp: doc.data().createdAt,
+                messageCount: 1 // You can calculate this separately if needed
+            }));
+            callback(conversations);
         });
     } catch (error) {
         console.error('Error getting all conversations:', error);
@@ -122,18 +146,18 @@ export const getAllConversations = (callback) => {
     }
 };
 
-
-export const loadConversation = (conversationId, callback) => {
+// Load specific conversation
+export const loadConversation = (chatId, callback) => {
     try {
         const user = auth.currentUser;
         if (!user) throw new Error('User not authenticated');
 
-        currentConversationId = conversationId;
+        currentChatId = chatId;
 
         const q = query(
             collection(firestore, 'chatMessages'),
             where('userId', '==', user.uid),
-            where('conversationId', '==', conversationId),
+            where('chatId', '==', chatId),
             orderBy('timestamp', 'asc')
         );
 
@@ -148,4 +172,10 @@ export const loadConversation = (conversationId, callback) => {
         console.error('Error loading conversation:', error);
         throw error;
     }
+};
+
+// Create new conversation (for UI purposes)
+export const createNewConversation = () => {
+    currentChatId = null;
+    return currentChatId;
 };

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { saveChatMessage, getCurrentChatHistory, createNewConversation,  loadConversation } from '../services/chatService';
+import { saveChatMessage, getCurrentChatHistory, createNewConversation, loadConversation, sendMessageToBackend } from '../services/chatService';
 import { useAuth } from '../context/AuthContext';
 
 export default function ChatWindow() {
@@ -34,21 +34,15 @@ export default function ChatWindow() {
             loadConversation(conversationId, (conversationMessages) => {
                 setMessages(conversationMessages);
             });
-          };
+        };
 
         window.addEventListener('newChatCreated', handleNewChat);
         window.addEventListener('conversationSelected', handleConversationSelect);
         return () => {
-          window.removeEventListener('newChatCreated', handleNewChat);
-        window.removeEventListener('conversationSelected', handleConversationSelect);
+            window.removeEventListener('newChatCreated', handleNewChat);
+            window.removeEventListener('conversationSelected', handleConversationSelect);
         };
     }, []);
-
-    // This is demo response when we connect backend, delete this part
-    const generateAIResponse = async (userMessage) => {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return `NICxTENSOR!!`;
-    };
 
     const handleSendMessage = async (e) => {
         e.preventDefault();
@@ -60,13 +54,20 @@ export default function ChatWindow() {
         setIsLoading(true);
 
         try {
-            // Demo responce, delete this also
-            const aiResponse = await generateAIResponse(userMessage);
+            // Send message to backend
+            const result = await sendMessageToBackend(userMessage);
             
-            await saveChatMessage(userMessage, aiResponse);
+            if (result.success) {
+                // Save both user message and AI response to Firestore
+                await saveChatMessage(userMessage, result.answer);
+            } else {
+                throw new Error(result.error);
+            }
         } catch (error) {
             console.error('Error sending message:', error);
             setInputMessage(userMessage);
+            // Show error to user
+            alert('Error: ' + error.message);
         } finally {
             setIsLoading(false);
         }
@@ -76,12 +77,13 @@ export default function ChatWindow() {
         <div className="h-full flex flex-col bg-[#0f0f0f]">
             <div className="p-4 border-b border-gray-800">
                 <h2 className="text-xl font-semibold text-white">Research Assistant</h2>
+                <p className="text-sm text-gray-400">Upload a PDF to start chatting with your documents</p>
             </div>
 
             <div className="flex-1 p-4 overflow-y-auto">
                 {messages.length === 0 ? (
                     <div className="text-center text-gray-400 mt-8">
-                        <p>Start a new conversation!</p>
+                        <p>Upload a PDF file to start a conversation!</p>
                     </div>
                 ) : (
                     <div className="space-y-4">
@@ -93,7 +95,6 @@ export default function ChatWindow() {
                                     </div>
                                 </div>
                                 
-                                {/* Demo responce, replace it */}
                                 <div className="flex justify-start">
                                     <div className="bg-[#1c1c1c] text-white p-3 rounded-lg max-w-[70%]">
                                         <p className="text-sm">{msg.response}</p>
@@ -101,6 +102,14 @@ export default function ChatWindow() {
                                 </div>
                             </div>
                         ))}
+                        
+                        {isLoading && (
+                            <div className="flex justify-start">
+                                <div className="bg-[#1c1c1c] text-white p-3 rounded-lg max-w-[70%]">
+                                    <p className="text-sm">AI is thinking...</p>
+                                </div>
+                            </div>
+                        )}
                         
                         <div ref={messagesEndRef} />
                     </div>
